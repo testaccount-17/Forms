@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ApiError } from '@/lib/api/client';
+import { completeOnboarding, getUserProfile } from '@/lib/api';
 import { supabase } from '@/utils/supabase';
 import { useRouter } from 'next/navigation';
 import { Sparkles, User, Phone, MapPin, Calendar, ArrowRight } from 'lucide-react';
@@ -27,17 +29,19 @@ export default function OnboardingPage() {
         return;
       }
 
-      const { data: profile } = await supabase
-        .from('users')
-        .select('client_id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (profile?.client_id) {
-        router.push('/dashboard');
-      } else {
-        setLoading(false);
+      try {
+        const profile = await getUserProfile();
+        if (profile.client_id) {
+          router.push('/dashboard');
+          return;
+        }
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status !== 404) {
+          console.error(err);
+        }
       }
+
+      setLoading(false);
     };
     checkUserStatus();
   }, [router]);
@@ -50,42 +54,15 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Write or update profile settings inside clients table
-      const { data: clientData, error: clientError } = await supabase
-        .from('clients')
-        .upsert(
-          {
-            first_name: formData.first_name,
-            middle_name: formData.middle_name || null,
-            last_name: formData.last_name,
-            email: user.email,
-            address: formData.address || null,
-            age: parseInt(formData.age) || null,
-            phone_no: formData.phone_no || null,
-            state: formData.state || null,
-            view: 'active'
-          },
-          { onConflict: 'email' }
-        )
-        .select()
-        .single();
-
-      if (clientError) throw clientError;
-
-        const { error: userUpsertError } = await supabase
-        .from('users')
-        .upsert(
-          {
-            id: user.id,
-            email: user.email,
-            client_id: clientData.id,
-            first_admin: true,
-            password_hash: 'OAUTH_MANAGED' // <-- BYPASSES THE NOT-NULL CONSTRAINT
-          },
-          { onConflict: 'id' }
-        );
-
-      if (userUpsertError) throw userUpsertError;
+      await completeOnboarding({
+        first_name: formData.first_name,
+        middle_name: formData.middle_name || undefined,
+        last_name: formData.last_name,
+        address: formData.address || undefined,
+        age: parseInt(formData.age) || undefined,
+        phone_no: formData.phone_no || undefined,
+        state: formData.state || undefined,
+      });
 
       router.push('/dashboard');
     } catch (err: any) {

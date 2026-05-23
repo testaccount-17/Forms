@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ApiError } from '@/lib/api/client';
+import { getUserProfile } from '@/lib/api';
 import { supabase } from '@/utils/supabase';
 import { useRouter } from 'next/navigation';
 import SecurityModal from '@/components/SecurityModal';
-import { ChevronDown, LogOut, Shield, ShieldAlert } from 'lucide-react';
+import { ChevronDown, LogOut, Shield } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -20,16 +22,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return;
       }
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('client_id, clients(*)')
-        .eq('id', user.id)
-        .maybeSingle();
+      try {
+        const profile = await getUserProfile();
 
-      if (!userData?.client_id) {
-        router.push('/onboarding');
-      } else {
-        setProfile(userData.clients);
+        if (!profile.client_id || !profile.clients) {
+          router.push('/onboarding');
+        } else {
+          setProfile(profile.clients);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+          router.push('/onboarding');
+        } else {
+          router.push('/login');
+        }
       }
     };
 
